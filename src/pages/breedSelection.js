@@ -12,13 +12,15 @@ export default class BreedSelectionPage extends Page {
 
   selectBreed(breed, subBreed) {
     return getRandomBreedImage(breed, subBreed)
-      .then((image) =>
-        database.transact((txn) => {
-          txn.setCurrentBreed(breed, subBreed);
-          txn.addImage(image);
-        })
-      )
-      .then(() => goForward(HomePage));
+      .then((image) => {
+        database.setCurrentBreed(breed, subBreed);
+        database.addImage(image);
+      })
+      .then(() => {
+        goForward(HomePage);
+        database.notify()
+      })
+      .catch(() => database.notify());
   }
 
   update() {

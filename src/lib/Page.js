@@ -14,11 +14,10 @@ export default class Page {
     document.getElementById('root').innerHTML = this.template();
     this.afterMount();
     this.update();
-    this.__unsubscribe = database.subscribe(() => this.update());
+    database.setCurrentPage(this);
   }
   
   unmount() {
-    this.__unsubscribe();
     this.beforeUnmount();
     document.getElementById('root').innerHTML = '';
   }

@@ -26,9 +26,12 @@ export default class HomePage extends Page {
       activeDogRequest = true;
       getRandomBreedImage(database.getCurrentBreed(), database.getCurrentSubBreed())
         .then((image) =>
-          database.transact((txn) => txn.addImage(image))
+          database.addImage(image)
         )
-        .finally(() => activeDogRequest = false);
+        .finally(() => {
+          database.notify();
+          activeDogRequest = false
+        });
     };
 
     document.getElementById('change-breed-button').onclick = () => {

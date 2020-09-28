@@ -10,13 +10,13 @@ function request(url) {
     request.addEventListener("load", () => {
       if(request.status !== 200 || request.getResponseHeader("content-type") !== "application/json") {
         console.error("api request failed: ", request);
-        database.transact((txn) => txn.setApiError("Request failed"));
+        database.setApiError("Request failed");
         reject();
       } else {
         const response = JSON.parse(request.responseText);
         if(response.status !== "success") {
           console.error("api error: ", response.message);
-          database.transact((txn) => txn.setApiError(response.message));
+          database.setApiError(response.message);
           reject();
         } else {
           resolve(response.message);
@@ -47,23 +47,21 @@ export function getAllBreeds() {
   request(apiUrl("breeds/list/all"))
     .then((breeds) =>
       getRandomBreedImage('shiba', null)
-        .then((shibaImage) =>
-          database.transact((txn) => {
-            txn.setBreedImage('shiba', undefined, shibaImage);
-            txn.addImage(shibaImage);
-          })
-        )
+        .then((shibaImage) => {
+          database.addBreedImage('shiba', undefined, shibaImage);
+          database.addImage(shibaImage);
+          database.notify();
+        })
         .then(() => {
           const breedsToLoad = Object.keys(breeds).filter((breed) => breed !== 'shiba');
-          return database.transact((txn) =>
-            Promise.all(breedsToLoad.flatMap((breed) => {
-              const subBreeds = breeds[breed].concat([undefined]);
-              return subBreeds.map((subBreed) =>
-                getRandomBreedImage(breed, subBreed)
-                  .then((breedImage) => txn.setBreedImage(breed, subBreed, breedImage))
-              );
-            }))
-          );
+          return Promise.all(breedsToLoad.flatMap((breed) => {
+            const subBreeds = breeds[breed].concat([undefined]);
+            return subBreeds.map((subBreed) =>
+              getRandomBreedImage(breed, subBreed)
+                .then((breedImage) => database.setBreedImage(breed, subBreed, breedImage))
+            );
+          }))
+            .then(() => database.notify())
         })
     );
 }

@@ -1,62 +1,29 @@
-class Result {
-  constructor(success, data = null) {
-    this.success = success;
-    this.data = data;
-  }
-}
+import Page from './Page.js';
 
-Result.success = (x) => new Result(true, x);
-Result.error = (x) => new Result(false, x);
-
-function getPath(obj, path) {
-  if(path.length > 0) {
-    if(path[0] in obj) {
-      return getPath(obj[path[0]], path.slice(1, path.length));
-    } else {
-      return Result.error();
-    }
-  } else {
-    return Result.success(obj);
-  }
-}
-
-// like a deep version of Objet.assign
-function merge(into, from) {
-  for(let key in from) {
-    if(key in into && typeof into[key] === 'object') {
-      merge(into[key], from[key]);
-    } else {
-      into[key] = from[key];
-    }
-  }
-  return into;
-}
-
-// read functions are common across transactions and databases
-class QueryableDatabase {
+class Database {
   constructor() {
-    if(this.constructor === QueryableDatabase)
-        throw new Error('Cannot construct abstract class QueryableDatabase');
+    this.__data = {
+      breeds: {},
+      imageHistory: [],
+      currentBreed: 'shiba',
+      currentSubBreed: null,
+      apiError: null
+    };
+    this.__currentPage = null;
   }
 
-  __getDataSources() {
-    throw new Error('abstract method __getDataSources must be overriden in inheriting class');
+  notify() {
+    this.__currentPage.update();
   }
-
-  __get(f) {
-    const dataSources = this.__getDataSources();
-    for(let dataSource of this.__getDataSources()) {
-      const result = f(dataSource);
-      if(!(result instanceof Result))
-        throw new Error('function passed to __get must return an instance of Result');
-      if(result.success)
-        return result.data;
-    }
-    return null;
+  
+  setCurrentPage(page) {
+    if(!(page instanceof Page))
+      throw new Error('cannot set non-Page object as current page');
+    this.__currentPage = page
   }
 
   getCurrentBreed() {
-    return this.__get((data) => getPath(data, ['currentBreed']));
+    return this.__data.currentBreed;
   }
 
   getCurrentSubBreed() {
@@ -82,27 +49,6 @@ class QueryableDatabase {
   getApiError() {
     return this.__get((data) => getPath(data, ['apiError']));
   }
-}
-
-// only transactions have write functions
-class Transaction extends QueryableDatabase {
-  constructor(database) {
-    super();
-    if(!(database instanceof QueryableDatabase))
-      throw new Error('invalid database passed into Transaction constructor');
-    this.__database = database;
-    this.__data = {
-      breeds: {}
-    };
-  }
-
-  __getDataSources() {
-    return [this.__data].concat(this.__database.__getDataSources());
-  }
-
-  apply() {
-    merge(this.__database.__data, this.__data);
-  }
 
   setBreedImage(breed, subBreed = 'main', breedImage) {
     const breedData = breed in this.__data.breeds ? this.__data.breeds[breed] : {};
@@ -111,10 +57,6 @@ class Transaction extends QueryableDatabase {
   }
 
   addImage(image) {
-    if(!('imageHistory' in this.__data)) {
-      let oldImageHistory = this.__database.getImageHistory();
-      this.__data.imageHistory = oldImageHistory.slice(0, oldImageHistory.length);
-    }
     this.__data.imageHistory.unshift(image);
   }
 
@@ -126,59 +68,7 @@ class Transaction extends QueryableDatabase {
   setApiError(apiError) {
     this.__data.apiError = apiError;
   }
-}
 
-class TransactableDatabase extends QueryableDatabase {
-  constructor() {
-    super();
-    this.__data = {
-      breeds: {},
-      imageHistory: [],
-      currentBreed: 'shiba',
-      currentSubBreed: null,
-      apiError: null
-    };
-    this.__subscribers = {};
-    this.__maxSubscriberId = -1;
-    this.__transactionPromise = Promise.resolve();
-  }
-
-  __getDataSources() {
-    return [this.__data];
-  }
-
-  __publish() {
-    Object.keys(this.__subscribers).forEach((id) => this.__subscribers[id]());
-  }
-
-  transact(f) {
-    this.__transactionPromise = this.__transactionPromise
-      .finally(() => {
-        const txn = new Transaction(this);
-        const result = f(txn);
-        const promise = (result instanceof Promise) ? result : Promise.resolve(result);
-        return promise.then((x) => {
-          console.log('applying transaction: ', txn.__data);
-          txn.apply(this.__data);
-          this.__publish();
-          return x;
-        });
-      });
-    return this.__transactionPromise;
-  }
-
-  subscribe(f) {
-    this.__maxSubscriberId++;
-    const subscriberId = this.__maxSubscriberId;
-    this.__subscribers[subscriberId] = f;
-    const unsubscribe = () => {
-      if(subscriberId in this.__subscribers)
-        delete this.__subscribers[subscriberId];
-    };
-    return unsubscribe;
-  }
-
-  // could be brought up to QueryableDatabase if desired
   forEachBreed(f) {
     for(let breed in this.__data.breeds) {
       for(let subBreed in this.__data.breeds[breed]) {
@@ -192,5 +82,5 @@ class TransactableDatabase extends QueryableDatabase {
   }
 }
 
-const database = new TransactableDatabase();
+const database = new Database();
 export default database;
